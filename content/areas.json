@@ -1,0 +1,22 @@
+{
+  "chapters": [
+    {
+      "id": 1,
+      "name": "Green Fringe",
+      "encounters": [
+        { "enemy_ids": ["slime_a", "slime_b"], "label": "Wet Path" },
+        { "enemy_ids": ["goblin"], "label": "Old Camp" }
+      ],
+      "boss": { "enemy_ids": ["goblin", "slime_b"], "label": "Fringe Chief" }
+    },
+    {
+      "id": 2,
+      "name": "Thunder Ridge",
+      "encounters": [
+        { "enemy_ids": ["slime_b", "goblin"], "label": "Storm Bend" },
+        { "enemy_ids": ["slime_a", "slime_b", "goblin"], "label": "Ridge Choke" }
+      ],
+      "boss": { "enemy_ids": ["goblin", "goblin", "slime_b"], "label": "Ridge Trio" }
+    }
+  ]
+}

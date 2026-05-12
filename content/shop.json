@@ -1,0 +1,8 @@
+{
+  "items": [
+    { "id": "potion", "name": "Potion", "kind": "consumable", "price": 20, "heal_hp": 45 },
+    { "id": "ether", "name": "Ether", "kind": "consumable", "price": 28, "restore_mp": 20 },
+    { "id": "iron_edge", "name": "Iron Edge", "kind": "upgrade", "price": 60, "attack_bonus": 1 },
+    { "id": "swift_boots", "name": "Swift Boots", "kind": "upgrade", "price": 70, "speed_bonus": 0.03 }
+  ]
+}

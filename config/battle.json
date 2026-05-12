@@ -1,0 +1,69 @@
+{
+  "_notes": "Balancing profile for multi-wave demo. Rewards drive flow screen (next wave/restart).",
+  "tie_break_player_first": true,
+  "atb": {
+    "max": 100,
+    "fill_multiplier": 24.0
+  },
+  "waves": {
+    "max_wave": 5,
+    "hp_scale_per_wave": 0.18,
+    "reward_scale_per_wave": 0.28
+  },
+  "party": [
+    {
+      "id": "hero",
+      "name": "Hero",
+      "hp": 140,
+      "mp": 65,
+      "speed": 1.2,
+      "skills": ["attack", "slash", "fire_bolt", "thunder", "heal", "wait", "defend"]
+    }
+  ],
+  "enemies": [
+    {
+      "id": "slime_a",
+      "name": "Slime A",
+      "hp": 72,
+      "mp": 24,
+      "speed": 1.08,
+      "skills": ["attack", "fire_bolt"],
+      "rewards": { "exp": 18, "gold": 12, "loot": ["Gel"] }
+    },
+    {
+      "id": "slime_b",
+      "name": "Slime B",
+      "hp": 68,
+      "mp": 32,
+      "speed": 0.98,
+      "skills": ["attack", "slash", "thunder"],
+      "rewards": { "exp": 20, "gold": 14, "loot": ["Spark Core"] }
+    },
+    {
+      "id": "goblin",
+      "name": "Goblin",
+      "hp": 110,
+      "mp": 20,
+      "speed": 1.15,
+      "skills": ["attack", "slash", "fire_bolt"],
+      "rewards": { "exp": 28, "gold": 22, "loot": ["Goblin Fang"] }
+    }
+  ],
+  "skill_definitions": {
+    "attack": { "mp_cost": 0, "kind": "physical", "power": 15 },
+    "slash": { "mp_cost": 5, "kind": "physical", "power": 24, "bleed_turns": 2 },
+    "fire_bolt": { "mp_cost": 8, "kind": "fire", "power": 30 },
+    "thunder": { "mp_cost": 12, "kind": "bolt", "power": 24, "poison_turns": 3, "slow_turns": 2 },
+    "heal": { "mp_cost": 13, "kind": "heal", "power": 36 },
+    "wait": { "mp_cost": 0, "kind": "wait", "mp_regen_on_wait": 6 },
+    "defend": { "mp_cost": 0, "kind": "defend", "guard_pct": 0.5 }
+  },
+  "status": {
+    "poison_tick_damage": 8,
+    "bleed_tick_damage": 6,
+    "defend_damage_multiplier": 0.5,
+    "regen_tick_heal": 5,
+    "regen_duration_turns": 3,
+    "slow_speed_multiplier": 0.78
+  }
+}
