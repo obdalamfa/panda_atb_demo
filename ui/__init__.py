@@ -1,3 +1,3 @@
-from ui.hud import BattleHud
+from ui.hud import ActionHud
 
-__all__ = ["BattleHud"]
+__all__ = ["ActionHud"]
