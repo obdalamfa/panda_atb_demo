@@ -1,0 +1,15 @@
+{
+  "tiers": [
+    { "ids": ["blob_small"],            "min_depth": 1, "max_depth": 4 },
+    { "ids": ["bat", "blob_small"],     "min_depth": 2, "max_depth": 6 },
+    { "ids": ["mushroom", "bat"],       "min_depth": 3, "max_depth": 9 },
+    { "ids": ["slime_a", "slime_b", "goblin"], "min_depth": 5, "max_depth": 13 },
+    { "ids": ["orc", "witch", "goblin"], "min_depth": 8, "max_depth": null }
+  ],
+  "bosses": {
+    "5":  "slime_king",
+    "10": "goblin_chief",
+    "15": "dark_knight",
+    "20": "ancient_golem"
+  }
+}

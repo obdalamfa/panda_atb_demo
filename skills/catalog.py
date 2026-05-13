@@ -16,7 +16,7 @@ class Skill:
 
 
 def _physical(actor: BattleUnit, target: BattleUnit, ctx: SkillContext, label: str) -> SkillResult:
-    power = int(ctx.raw.get("power", 10))
+    power = int(ctx.raw.get("power", 10)) + getattr(actor, "attack_bonus", 0)
     mult = 0.5 if target.defending or target.has_effect("guard") else 1.0
     dmg = max(1, int(power * mult))
     dealt = target.damage(dmg)
@@ -31,6 +31,7 @@ def _physical(actor: BattleUnit, target: BattleUnit, ctx: SkillContext, label: s
         target_anim="hit",
         fx="slash",
         fx_target_unit_id=target.unit_id,
+        damage_dealt=dealt,
     )
 
 
@@ -45,6 +46,7 @@ def _fire(actor: BattleUnit, target: BattleUnit, ctx: SkillContext) -> SkillResu
         target_anim="hit",
         fx="fire_bolt",
         fx_target_unit_id=target.unit_id,
+        damage_dealt=dealt,
     )
 
 
@@ -68,6 +70,7 @@ def _thunder(actor: BattleUnit, target: BattleUnit, ctx: SkillContext) -> SkillR
         target_anim="hit",
         fx="thunder",
         fx_target_unit_id=target.unit_id,
+        damage_dealt=dealt,
     )
 
 
@@ -87,7 +90,7 @@ def _heal(actor: BattleUnit, target: BattleUnit, ctx: SkillContext) -> SkillResu
         tick = int(ctx.raw.get("_status_regen_tick_heal", 0))
         lines.append(f"Regeneration: {regen_turns} turn(s), +{tick} HP each turn start (see status.regen_* in battle.json).")
 
-    return SkillResult(lines=lines, actor_anim="cast", target_anim="idle", fx="heal")
+    return SkillResult(lines=lines, actor_anim="cast", target_anim="idle", fx="heal", heal_dealt=gained)
 
 
 def _wait(actor: BattleUnit, target: BattleUnit, ctx: SkillContext) -> SkillResult:

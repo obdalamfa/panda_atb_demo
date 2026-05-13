@@ -1,127 +1,110 @@
 """
-Native Panda3D particle effects: ParticleEffect + Particles (+ PointParticleRenderer).
-Call ShowBase.enableParticles() before spawning.
+Interval-based particle burst effects — no Panda3D ParticleEffect dependency.
+Each spawn function returns an _FXHandle that can be stopped via stop_pe().
 """
 from __future__ import annotations
 
-from direct.particles.ParticleEffect import ParticleEffect
-from direct.particles.Particles import Particles
-from panda3d.physics import PointEmitter, PointParticleFactory, PointParticleRenderer
+import math
+import random
+
+from direct.interval.IntervalGlobal import (
+    Func,
+    LerpColorScaleInterval,
+    LerpPosInterval,
+    Parallel,
+    Sequence,
+)
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import Vec3
+from panda3d.core import CardMaker, LColor, Vec3
 
 
-def _burst(
+class _FXHandle:
+    def __init__(self, seqs: list, nodes: list) -> None:
+        self._seqs = seqs
+        self._nodes = nodes
+
+    def disable(self) -> None:
+        for s in self._seqs:
+            try:
+                s.pause()
+            except Exception:
+                pass
+
+    def cleanup(self) -> None:
+        self.disable()
+        for n in list(self._nodes):
+            try:
+                if not n.isEmpty():
+                    n.removeNode()
+            except Exception:
+                pass
+        self._nodes.clear()
+
+
+def _spawn_orbs(
     base: ShowBase,
+    origin: Vec3,
     *,
-    birth_rate: float,
-    litter: int,
-    life: float,
-    speed: float,
-    point_size: float,
-    color_rgba: tuple[float, float, float, float],
-    spread_deg: float,
-    z_dir: float,
-) -> Particles:
-    _ = base
-    particles = Particles()
-    particles.setPoolSize(2048)
-    particles.setBirthRate(birth_rate)
-    particles.setLitterSize(litter)
-    particles.setLitterSpread(0)
-    particles.setSystemLifespan(0.0)
-    particles.setLocalVelocityFlag(1)
-    particles.setSystemGrowsOlderFlag(0)
+    count: int,
+    color: tuple,
+    spread: float,
+    duration: float,
+    size: float = 0.20,
+    z_bias: float = 0.5,
+) -> _FXHandle:
+    nodes: list = []
+    seqs: list = []
+    lc = LColor(*color)
+    lc_fade = LColor(color[0] * 0.1, color[1] * 0.1, color[2] * 0.1, 0.0)
 
-    factory = PointParticleFactory()
-    factory.setLifeSpan(life)
-    factory.setLifeSpanSpread(0.15)
-    factory.setMass(1.0)
-    factory.setTerminalVelocity(0.0)
-    particles.setFactory(factory)
+    for _ in range(count):
+        cm = CardMaker("fx_orb")
+        cm.setFrame(-size, size, -size, size)
+        orb = base.render.attachNewNode(cm.generate())
+        orb.setColor(lc)
+        orb.setBillboardPointEye()
+        orb.setPos(origin)
 
-    ren = PointParticleRenderer()
-    ren.setPointSize(point_size)
-    ren.setStartColor(*color_rgba)
-    ren.setEndColor(color_rgba[0] * 0.25, color_rgba[1] * 0.25, color_rgba[2] * 0.25, 0.0)
-    particles.setRenderer(ren)
+        angle = random.uniform(0, 2 * math.pi)
+        v = random.uniform(0.3, 1.0)
+        dx = math.cos(angle) * spread * v
+        dz = (abs(math.sin(angle)) * spread * v * 0.8) + z_bias * random.uniform(0.4, 1.0)
+        end = Vec3(origin) + Vec3(dx, 0.0, dz)
 
-    emitter = PointEmitter()
-    emitter.setPosition(Vec3(0, 0, 0))
-    emitter.setEmissionDirection(Vec3(0, 0, z_dir))
-    emitter.setSpreadAngle(spread_deg)
-    emitter.setExplicitLaunchVector(Vec3(0, 0, speed))
-    emitter.setRadiateOrigin(Vec3(0, 0, 0))
-    particles.setEmitter(emitter)
+        move = LerpPosInterval(orb, duration, end)
+        fade = LerpColorScaleInterval(orb, duration * 0.9, lc_fade)
+        s = Sequence(Parallel(move, fade), Func(orb.removeNode))
+        s.start()
+        seqs.append(s)
+        nodes.append(orb)
 
-    return particles
+    return _FXHandle(seqs, nodes)
 
 
-def spawn_fire_bolt(base: ShowBase, parent, pos) -> ParticleEffect:
-    pe = ParticleEffect()
-    pe.setPos(pos)
-    pe.addParticles(
-        _burst(
-            base,
-            birth_rate=0.02,
-            litter=16,
-            life=0.45,
-            speed=4.0,
-            point_size=4.0,
-            color_rgba=(1.0, 0.45, 0.12, 1.0),
-            spread_deg=28.0,
-            z_dir=1.0,
-        )
+def spawn_fire_bolt(base: ShowBase, world_pos: Vec3) -> _FXHandle:
+    return _spawn_orbs(
+        base, Vec3(world_pos),
+        count=20, color=(1.0, 0.50, 0.12, 1.0),
+        spread=1.5, duration=0.45, size=0.24, z_bias=0.4,
     )
-    pe.reparentTo(parent)
-    pe.start(parent=parent, renderParent=base.render)
-    return pe
 
 
-def spawn_thunder_sparks(base: ShowBase, parent, pos) -> ParticleEffect:
-    pe = ParticleEffect()
-    pe.setPos(pos)
-    pe.addParticles(
-        _burst(
-            base,
-            birth_rate=0.018,
-            litter=24,
-            life=0.38,
-            speed=5.5,
-            point_size=3.2,
-            color_rgba=(1.0, 0.95, 0.35, 1.0),
-            spread_deg=88.0,
-            z_dir=-0.2,
-        )
+def spawn_thunder_sparks(base: ShowBase, world_pos: Vec3) -> _FXHandle:
+    return _spawn_orbs(
+        base, Vec3(world_pos),
+        count=26, color=(1.0, 0.95, 0.28, 1.0),
+        spread=2.2, duration=0.38, size=0.17, z_bias=-0.3,
     )
-    pe.reparentTo(parent)
-    pe.start(parent=parent, renderParent=base.render)
-    return pe
 
 
-def spawn_heal_mist(base: ShowBase, parent, pos) -> ParticleEffect:
-    pe = ParticleEffect()
-    pe.setPos(pos)
-    pe.addParticles(
-        _burst(
-            base,
-            birth_rate=0.03,
-            litter=12,
-            life=0.55,
-            speed=2.2,
-            point_size=3.6,
-            color_rgba=(0.45, 1.0, 0.65, 0.85),
-            spread_deg=42.0,
-            z_dir=1.0,
-        )
+def spawn_heal_mist(base: ShowBase, world_pos: Vec3) -> _FXHandle:
+    return _spawn_orbs(
+        base, Vec3(world_pos),
+        count=16, color=(0.38, 1.0, 0.58, 0.90),
+        spread=0.9, duration=0.65, size=0.21, z_bias=1.2,
     )
-    pe.reparentTo(parent)
-    pe.start(parent=parent, renderParent=base.render)
-    return pe
 
 
-def stop_pe(pe: ParticleEffect | None) -> None:
-    if pe is None:
-        return
-    pe.disable()
-    pe.cleanup()
+def stop_pe(pe: _FXHandle | None) -> None:
+    if pe is not None:
+        pe.cleanup()

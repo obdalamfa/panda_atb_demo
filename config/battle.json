@@ -1,69 +1,150 @@
 {
-  "_notes": "Balancing profile for multi-wave demo. Rewards drive flow screen (next wave/restart).",
+  "_notes": "Roguelike edition: depth-based scaling, tiered enemy pool, boss gates.",
   "tie_break_player_first": true,
   "atb": {
     "max": 100,
     "fill_multiplier": 24.0
   },
   "waves": {
-    "max_wave": 5,
-    "hp_scale_per_wave": 0.18,
-    "reward_scale_per_wave": 0.28
+    "max_wave": 20,
+    "hp_scale_per_wave": 0.06,
+    "reward_scale_per_wave": 0.12
   },
   "party": [
     {
       "id": "hero",
       "name": "Hero",
-      "hp": 140,
-      "mp": 65,
-      "speed": 1.2,
+      "hp": 220,
+      "mp": 80,
+      "speed": 1.25,
       "skills": ["attack", "slash", "fire_bolt", "thunder", "heal", "wait", "defend"]
     }
   ],
   "enemies": [
     {
+      "id": "blob_small",
+      "name": "Blob",
+      "hp": 25,
+      "mp": 0,
+      "speed": 0.85,
+      "skills": ["attack"],
+      "rewards": { "exp": 8, "gold": 5, "loot": ["Gel"] }
+    },
+    {
+      "id": "bat",
+      "name": "Bat",
+      "hp": 38,
+      "mp": 10,
+      "speed": 1.45,
+      "skills": ["attack", "slash"],
+      "rewards": { "exp": 14, "gold": 8, "loot": ["Bat Wing"] }
+    },
+    {
+      "id": "mushroom",
+      "name": "Mushroom",
+      "hp": 58,
+      "mp": 45,
+      "speed": 0.82,
+      "skills": ["attack", "thunder", "fire_bolt"],
+      "rewards": { "exp": 20, "gold": 12, "loot": ["Mushroom Cap"] }
+    },
+    {
       "id": "slime_a",
       "name": "Slime A",
-      "hp": 72,
-      "mp": 24,
+      "hp": 90,
+      "mp": 28,
       "speed": 1.08,
       "skills": ["attack", "fire_bolt"],
-      "rewards": { "exp": 18, "gold": 12, "loot": ["Gel"] }
+      "rewards": { "exp": 24, "gold": 16, "loot": ["Gel"] }
     },
     {
       "id": "slime_b",
       "name": "Slime B",
-      "hp": 68,
-      "mp": 32,
+      "hp": 85,
+      "mp": 36,
       "speed": 0.98,
       "skills": ["attack", "slash", "thunder"],
-      "rewards": { "exp": 20, "gold": 14, "loot": ["Spark Core"] }
+      "rewards": { "exp": 28, "gold": 18, "loot": ["Spark Core"] }
     },
     {
       "id": "goblin",
       "name": "Goblin",
-      "hp": 110,
-      "mp": 20,
+      "hp": 135,
+      "mp": 24,
       "speed": 1.15,
       "skills": ["attack", "slash", "fire_bolt"],
-      "rewards": { "exp": 28, "gold": 22, "loot": ["Goblin Fang"] }
+      "rewards": { "exp": 35, "gold": 26, "loot": ["Goblin Fang"] }
+    },
+    {
+      "id": "orc",
+      "name": "Orc",
+      "hp": 180,
+      "mp": 20,
+      "speed": 0.92,
+      "skills": ["attack", "slash", "defend"],
+      "rewards": { "exp": 50, "gold": 38, "loot": ["Orc Hide"] }
+    },
+    {
+      "id": "witch",
+      "name": "Witch",
+      "hp": 80,
+      "mp": 70,
+      "speed": 1.08,
+      "skills": ["fire_bolt", "thunder", "heal"],
+      "rewards": { "exp": 45, "gold": 35, "loot": ["Witch Gem"] }
+    },
+    {
+      "id": "slime_king",
+      "name": "Slime King",
+      "hp": 320,
+      "mp": 60,
+      "speed": 1.10,
+      "skills": ["attack", "slash", "fire_bolt", "heal"],
+      "rewards": { "exp": 130, "gold": 90, "loot": ["King Gel", "Spark Core"] }
+    },
+    {
+      "id": "goblin_chief",
+      "name": "Goblin Chief",
+      "hp": 300,
+      "mp": 45,
+      "speed": 1.22,
+      "skills": ["attack", "slash", "thunder", "defend"],
+      "rewards": { "exp": 145, "gold": 105, "loot": ["Chief Crown", "Goblin Fang"] }
+    },
+    {
+      "id": "dark_knight",
+      "name": "Dark Knight",
+      "hp": 420,
+      "mp": 65,
+      "speed": 1.12,
+      "skills": ["attack", "slash", "thunder", "defend"],
+      "rewards": { "exp": 220, "gold": 165, "loot": ["Dark Blade", "Spark Core"] }
+    },
+    {
+      "id": "ancient_golem",
+      "name": "Ancient Golem",
+      "hp": 500,
+      "mp": 30,
+      "speed": 0.78,
+      "skills": ["attack", "slash", "defend"],
+      "rewards": { "exp": 280, "gold": 200, "loot": ["Golem Core", "Orc Hide"] }
     }
   ],
   "skill_definitions": {
-    "attack": { "mp_cost": 0, "kind": "physical", "power": 15 },
-    "slash": { "mp_cost": 5, "kind": "physical", "power": 24, "bleed_turns": 2 },
-    "fire_bolt": { "mp_cost": 8, "kind": "fire", "power": 30 },
-    "thunder": { "mp_cost": 12, "kind": "bolt", "power": 24, "poison_turns": 3, "slow_turns": 2 },
-    "heal": { "mp_cost": 13, "kind": "heal", "power": 36 },
-    "wait": { "mp_cost": 0, "kind": "wait", "mp_regen_on_wait": 6 },
-    "defend": { "mp_cost": 0, "kind": "defend", "guard_pct": 0.5 }
+    "attack":    { "mp_cost": 0,  "kind": "physical", "power": 16 },
+    "slash":     { "mp_cost": 5,  "kind": "physical", "power": 28, "bleed_turns": 3 },
+    "fire_bolt": { "mp_cost": 8,  "kind": "fire",     "power": 32 },
+    "thunder":   { "mp_cost": 12, "kind": "bolt",     "power": 26, "poison_turns": 3, "slow_turns": 2 },
+    "heal":      { "mp_cost": 13, "kind": "heal",     "power": 50 },
+    "wait":      { "mp_cost": 0,  "kind": "wait",     "mp_regen_on_wait": 9 },
+    "defend":    { "mp_cost": 0,  "kind": "defend",   "guard_pct": 0.5 }
   },
   "status": {
-    "poison_tick_damage": 8,
-    "bleed_tick_damage": 6,
+    "poison_tick_damage": 10,
+    "bleed_tick_damage": 8,
     "defend_damage_multiplier": 0.5,
-    "regen_tick_heal": 5,
-    "regen_duration_turns": 3,
-    "slow_speed_multiplier": 0.78
+    "regen_tick_heal": 8,
+    "regen_duration_turns": 4,
+    "slow_speed_multiplier": 0.75
   }
 }

@@ -54,12 +54,25 @@ class BattleEngine:
         if hero_override:
             hero_entry.update(hero_override)
         self.hero = self._unit_from_entry(hero_entry, is_player=True)
-        all_enemies = [self._unit_from_entry(e, is_player=False, index=i) for i, e in enumerate(data["enemies"])]
+        enemy_defs = {str(e["id"]): e for e in data["enemies"]}
         if enemy_ids:
-            enemy_set = set(enemy_ids)
-            self.enemies = [e for e in all_enemies if e.unit_id in enemy_set]
+            id_counts: dict[str, int] = {}
+            for eid in enemy_ids:
+                id_counts[eid] = id_counts.get(eid, 0) + 1
+            seen: dict[str, int] = {}
+            self.enemies = []
+            for eid in enemy_ids:
+                entry = enemy_defs.get(eid)
+                if entry is None:
+                    continue
+                seen[eid] = seen.get(eid, 0) + 1
+                overridden = dict(entry)
+                if id_counts[eid] > 1:
+                    overridden["id"] = f"{eid}_{seen[eid]}"
+                    overridden["name"] = f"{entry['name']} {seen[eid]}"
+                self.enemies.append(self._unit_from_entry(overridden, is_player=False, index=len(self.enemies)))
         else:
-            self.enemies = all_enemies
+            self.enemies = [self._unit_from_entry(e, is_player=False, index=i) for i, e in enumerate(data["enemies"])]
         self._apply_wave_scaling()
 
         self.state = BattleState.TICKING
@@ -89,6 +102,7 @@ class BattleEngine:
         unit.exp_reward = int(rewards.get("exp", 0))
         unit.gold_reward = int(rewards.get("gold", 0))
         unit.loot_reward = list(rewards.get("loot", []))
+        unit.attack_bonus = int(entry.get("attack_bonus", 0))
         return unit
 
     def _apply_wave_scaling(self) -> None:
@@ -155,7 +169,7 @@ class BattleEngine:
             dmg = self.bleed_tick_damage
             actor.damage(dmg)
             lines.append(f"{actor.name} bleeds ({dmg}).")
-        if actor.has_effect("regen"):
+        if actor.alive and actor.has_effect("regen"):
             h = actor.heal(self.regen_tick_heal)
             lines.append(f"{actor.name} regenerates (+{h}).")
         actor.tick_effects()
@@ -239,7 +253,9 @@ class BattleEngine:
                 best_score = score
                 best = sk
         if best is None:
-            return self.skills["attack"]
+            if "attack" in self.skills:
+                return self.skills["attack"]
+            return self.skills[next(iter(self.skills))]
         return best
 
     def _skill_context(self, skill_id: str) -> SkillContext:
@@ -268,7 +284,7 @@ class BattleEngine:
 
         tgt: BattleUnit
         if not actor.is_player:
-            tgt = self.hero if self.hero.alive else self.hero
+            tgt = self.hero
         elif needs_enemy_target:
             if target is None or target.is_player or target not in self.enemies or not target.alive:
                 self.on_log("Invalid enemy target.")

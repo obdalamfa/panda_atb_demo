@@ -65,6 +65,9 @@ class BattleHud:
         self._target_buttons: list[DirectButton] = []
         self._target_button_uids: list[str] = []
 
+        self._last_picking_state = False
+        self._last_selected_idx = -1
+
         self.set_commands_enabled(False)
 
     def _label(self, text: str, pos, scale: float):
@@ -95,16 +98,15 @@ class BattleHud:
         e = self.engine
         lines: list[str] = []
 
-        self._clear_target_buttons()
         picking = e.state == BattleState.PLAYER_PICK_TARGET
 
         h = e.hero
         lines.append(
             f"{h.name}  HP {h.hp}/{h.max_hp}  MP {h.mp}/{h.max_mp}  ATB {h.atb:5.1f}/{e.atb_max}"
             f"{'  DEF' if h.defending else ''}"
-            f"{f'  Regen:{h.effects.get(\"regen\", 0)}' if h.has_effect('regen') else ''}"
-            f"{f'  Psn:{h.effects.get(\"poison\", 0)}' if h.has_effect('poison') else ''}"
-            f"{f'  Slow:{h.effects.get(\"slow\", 0)}' if h.has_effect('slow') else ''}"
+            f"{'  Regen:' + str(h.effects.get('regen', 0)) if h.has_effect('regen') else ''}"
+            f"{'  Psn:' + str(h.effects.get('poison', 0)) if h.has_effect('poison') else ''}"
+            f"{'  Slow:' + str(h.effects.get('slow', 0)) if h.has_effect('slow') else ''}"
         )
 
         for foe in e.enemies:
@@ -112,8 +114,8 @@ class BattleHud:
                 lines.append(
                     f"{foe.name}  HP {foe.hp}/{foe.max_hp}  MP {foe.mp}/{foe.max_mp}  ATB {foe.atb:5.1f}/{e.atb_max}"
                     f"{'  DEF' if foe.defending else ''}"
-                    f"{f'  Psn:{foe.effects.get(\"poison\", 0)}' if foe.has_effect('poison') else ''}"
-                    f"{f'  Slow:{foe.effects.get(\"slow\", 0)}' if foe.has_effect('slow') else ''}"
+                    f"{'  Psn:' + str(foe.effects.get('poison', 0)) if foe.has_effect('poison') else ''}"
+                    f"{'  Slow:' + str(foe.effects.get('slow', 0)) if foe.has_effect('slow') else ''}"
                 )
             else:
                 lines.append(f"{foe.name}  (KO)")
@@ -128,24 +130,36 @@ class BattleHud:
         if over:
             self.set_commands_enabled(False)
             self.btn_cancel["state"] = "disabled"
+            if self._last_picking_state:
+                self._clear_target_buttons()
+                self._last_picking_state = False
             return
 
         if picking:
             self.set_commands_enabled(False)
             self.btn_cancel["state"] = "normal"
             foes = e.alive_enemies()
-            for i, foe in enumerate(foes):
-                x = -0.95 + i * 0.42  # narrower if many foes
-                b = DirectButton(
-                    text=f"> {foe.name} <" if i == e.selected_target_idx else foe.name,
-                    scale=0.05,
-                    pos=(x if len(foes) <= 4 else -1.05 + (i % 5) * 0.52, 0, 0.2 - 0.12 * (i // 5)),
-                    command=lambda uid=foe.unit_id: self.engine.player_confirm_target(uid),
-                    parent=self.panel,
-                )
-                self._target_buttons.append(b)
-                self._target_button_uids.append(foe.unit_id)
+            
+            if not self._last_picking_state or self._last_selected_idx != e.selected_target_idx:
+                self._clear_target_buttons()
+                for i, foe in enumerate(foes):
+                    x = -0.95 + i * 0.42  # narrower if many foes
+                    b = DirectButton(
+                        text=f"> {foe.name} <" if i == e.selected_target_idx else foe.name,
+                        scale=0.05,
+                        pos=(x if len(foes) <= 4 else -1.05 + (i % 5) * 0.52, 0, 0.2 - 0.12 * (i // 5)),
+                        command=lambda uid=foe.unit_id: self.engine.player_confirm_target(uid),
+                        parent=self.panel,
+                    )
+                    self._target_buttons.append(b)
+                    self._target_button_uids.append(foe.unit_id)
+                self._last_selected_idx = e.selected_target_idx
+                self._last_picking_state = True
             return
+
+        if self._last_picking_state:
+            self._clear_target_buttons()
+            self._last_picking_state = False
 
         self.btn_cancel["state"] = "disabled"
 

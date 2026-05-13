@@ -20,6 +20,7 @@ class BattleUnit:
     exp_reward: int = 0
     gold_reward: int = 0
     loot_reward: list[str] = field(default_factory=list)
+    attack_bonus: int = 0
 
     @property
     def alive(self) -> bool:

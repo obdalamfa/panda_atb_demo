@@ -1,0 +1,12 @@
+{
+  "upgrades": [
+    { "id": "hp_up",     "name": "Vitality  +30 HP",   "effect": { "max_hp_bonus": 30  } },
+    { "id": "atk_up",   "name": "Strength  +5 ATK",   "effect": { "attack_bonus": 5   } },
+    { "id": "mp_up",    "name": "Arcane    +20 MP",   "effect": { "max_mp_bonus": 20  } },
+    { "id": "spd_up",   "name": "Agility   +0.10 SPD","effect": { "speed_bonus": 0.10 } },
+    { "id": "potion2",  "name": "Satchel   +2 Potion","effect": { "potion": 2         } },
+    { "id": "hp_up2",   "name": "Fortitude +50 HP",   "effect": { "max_hp_bonus": 50  } },
+    { "id": "atk_up2",  "name": "Fury      +8 ATK",   "effect": { "attack_bonus": 8   } },
+    { "id": "spd_up2",  "name": "Haste     +0.15 SPD","effect": { "speed_bonus": 0.15 } }
+  ]
+}

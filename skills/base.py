@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -9,10 +10,11 @@ class SkillResult:
     actor_anim: str = "idle"
     target_anim: str = "hit"
     fx: str = "none"
-    # If set, arena/VFX snap to this defender (offensive skills).
     fx_target_unit_id: str | None = None
+    damage_dealt: int = 0
+    heal_dealt: int = 0
 
 
 @dataclass
 class SkillContext:
-    raw: dict
+    raw: dict[str, Any]

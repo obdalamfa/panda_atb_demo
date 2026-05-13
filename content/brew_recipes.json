@@ -1,0 +1,46 @@
+{
+  "recipes": [
+    {
+      "id": "vital_brew",
+      "name": "Vital Brew",
+      "desc": "2x Gel  →  +25 max HP",
+      "ingredients": { "Gel": 2 },
+      "effect": { "max_hp_bonus": 25 }
+    },
+    {
+      "id": "power_brew",
+      "name": "Power Brew",
+      "desc": "2x Goblin Fang  →  +6 ATK",
+      "ingredients": { "Goblin Fang": 2 },
+      "effect": { "attack_bonus": 6 }
+    },
+    {
+      "id": "storm_brew",
+      "name": "Storm Brew",
+      "desc": "2x Spark Core + 1 Goblin Fang  →  +10 ATK",
+      "ingredients": { "Spark Core": 2, "Goblin Fang": 1 },
+      "effect": { "attack_bonus": 10 }
+    },
+    {
+      "id": "wind_brew",
+      "name": "Wind Brew",
+      "desc": "2x Bat Wing  →  +0.12 SPD",
+      "ingredients": { "Bat Wing": 2 },
+      "effect": { "speed_bonus": 0.12 }
+    },
+    {
+      "id": "arcane_brew",
+      "name": "Arcane Brew",
+      "desc": "2x Mushroom Cap  →  +18 max MP",
+      "ingredients": { "Mushroom Cap": 2 },
+      "effect": { "max_mp_bonus": 18 }
+    },
+    {
+      "id": "iron_brew",
+      "name": "Iron Brew",
+      "desc": "2x Orc Hide  →  +40 max HP",
+      "ingredients": { "Orc Hide": 2 },
+      "effect": { "max_hp_bonus": 40 }
+    }
+  ]
+}
