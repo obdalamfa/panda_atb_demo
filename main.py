@@ -8,7 +8,9 @@ Run:
 Controls (battle):
   WASD / Arrow Keys — Move (W/S = depth axis)
   Space             — Jump
-  J                 — Attack
+  J / F             — Light attack  (fast, 1× dmg)
+  K                 — Heavy attack  (slow, 2.2× dmg, shockwave)
+  J while airborne  — Jump slam     (AoE on landing, 1.8× dmg)
   R                 — Restart run
   M                 — Menu
 """
@@ -23,7 +25,9 @@ from pathlib import Path
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
 
-from battle.action_engine import ActionEngine
+from battle.action_engine import (
+    ActionEngine, ES_BASIC, ES_SLAM, ES_COMBO, ES_RANGED, ES_DIVE,
+)
 from core import PlayerProfile, RunState, load_profile, save_profile
 from render.arena import ArenaScene
 from ui.hud import ActionHud
@@ -43,6 +47,23 @@ class AppScene(Enum):
     REWARD    = auto()
     BREW      = auto()
     GAME_OVER = auto()
+
+
+# Attack style per enemy unit_id
+_ENEMY_STYLES: dict[str, str] = {
+    "blob_small":    ES_SLAM,
+    "bat":           ES_DIVE,
+    "mushroom":      ES_RANGED,
+    "goblin":        ES_COMBO,
+    "slime_a":       ES_BASIC,
+    "slime_b":       ES_BASIC,
+    "orc":           ES_SLAM,
+    "witch":         ES_RANGED,
+    "slime_king":    ES_SLAM,
+    "goblin_chief":  ES_COMBO,
+    "dark_knight":   ES_COMBO,
+    "ancient_golem": ES_SLAM,
+}
 
 
 def _load_unit_stats(config_path: Path) -> dict:
@@ -129,6 +150,7 @@ class BeatEmUpApp(ShowBase):
                     "speed":        max(1.5, stats.get("speed", 1.0) * 1.8),
                     "attack_cd":    self._action_cd(stats),
                     "attack_range": 1.4,
+                    "attack_style": _ENEMY_STYLES.get(eid, ES_BASIC),
                     "exp":          stats.get("exp_reward", 20),
                     "gold":         stats.get("gold_reward", 10),
                     "loot":         stats.get("loot_reward", []),
@@ -148,9 +170,11 @@ class BeatEmUpApp(ShowBase):
         self.accept("space",    self._on_jump)
         self.accept("space-up", self._noop)
 
-        # Attack
-        self.accept("j", self._on_attack)
-        self.accept("f", self._on_attack)
+        # Light attack
+        self.accept("j", self._on_light_attack)
+        self.accept("f", self._on_light_attack)
+        # Heavy attack
+        self.accept("k", self._on_heavy_attack)
 
         # Meta
         self.accept("n", self._on_n)
@@ -176,9 +200,17 @@ class BeatEmUpApp(ShowBase):
         if self.scene == AppScene.BATTLE:
             self._keys["space_pressed"] = True
 
-    def _on_attack(self) -> None:
+    def _on_light_attack(self) -> None:
         if self.scene == AppScene.BATTLE:
-            self.engine.queue_attack()
+            # Auto-upgrade to jump slam when airborne
+            if self.engine.player.y > 0.5:
+                self.engine.queue_jump_attack()
+            else:
+                self.engine.queue_light_attack()
+
+    def _on_heavy_attack(self) -> None:
+        if self.scene == AppScene.BATTLE:
+            self.engine.queue_heavy_attack()
 
     def _on_n(self) -> None:
         if self.scene in (AppScene.REWARD, AppScene.BREW):
@@ -363,7 +395,8 @@ class BeatEmUpApp(ShowBase):
         if self.scene == AppScene.BATTLE:
             self.engine.update(dt, self._keys)
             self.arena.process_damage_log()
-            self.arena.update_characters()
+            self.arena.process_vfx_queue()
+            self.arena.update_characters(dt)
             self._check_battle_over()
 
         self.hud.refresh()
