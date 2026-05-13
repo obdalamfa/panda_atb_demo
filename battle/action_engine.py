@@ -1,29 +1,34 @@
 """
-Real-time 2.5D beat-em-up engine.
-Player has 3 attack types; each enemy has a distinct attack style.
-VFX events are queued for the arena to consume each frame.
+Real-time 2.5D beat-em-up engine with Tekken-style combo input system.
+
+4 attack buttons: LP (J/F), RP (K), LK (U), RK (I).
+Input chain accumulates timed button presses; best matching combo executes.
+Longer combos always win. Chain resets on timeout, hurt, or dead.
 """
 from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
 
-GRAVITY = -24.0
-GROUND  =   0.0
-PLAY_W  =   9.0   # x: -PLAY_W .. PLAY_W
-PLAY_D  =   4.5   # depth: 0 .. PLAY_D
+from battle.combo_catalog import (
+    LP, RP, LK, RK,
+    BASE_CD, BASE_DMG, BASE_RANGE,
+    ComboMove, best_match, is_valid_prefix,
+)
 
-# ── Player attack types ───────────────────────────────────────────────────────
-AT_LIGHT = "light"      # J  — fast, 1× dmg, normal reach
-AT_HEAVY = "heavy"      # K  — slow, 2.2× dmg, wide reach, shockwave
-AT_JUMP  = "jump_slam"  # J in air — AoE on landing, 1.8× dmg
+GRAVITY      = -24.0
+GROUND       =   0.0
+PLAY_W       =   9.0
+PLAY_D       =   4.5
+CHAIN_WINDOW =  0.42   # seconds between inputs before chain resets
+LINK_GRACE   =  0.10   # seconds before recovery end where next input is buffered
 
 # ── Enemy attack styles ───────────────────────────────────────────────────────
-ES_BASIC  = "basic"    # standard melee
-ES_SLAM   = "slam"     # telegraphed wide slam, high damage
-ES_COMBO  = "combo"    # two quick hits back-to-back
-ES_RANGED = "ranged"   # fires a bolt (instant dmg + vfx)
-ES_DIVE   = "dive"     # jumps up then crashes down on player
+ES_BASIC  = "basic"
+ES_SLAM   = "slam"
+ES_COMBO  = "combo"
+ES_RANGED = "ranged"
+ES_DIVE   = "dive"
 
 
 @dataclass
@@ -38,32 +43,30 @@ class ActionUnit:
     speed:        float = 4.0
     x:            float = 0.0
     depth:        float = 2.0
-    y:            float = 0.0   # vertical (0 = ground)
+    y:            float = 0.0
     vy:           float = 0.0
-    facing:       int   = 1     # 1=right, -1=left
+    facing:       int   = 1
     state:        str   = "idle"
 
     hurt_timer:   float = 0.0
     attack_timer: float = 0.0
     attack_cd:    float = 0.55
     attack_range: float = 1.5
-    attack_depth: float = 0.9   # depth tolerance
+    attack_depth: float = 0.9
 
-    attack_style: str   = ES_BASIC   # enemy only
-    combo_left:   int   = 0          # remaining combo hits
+    attack_style: str = ES_BASIC
+    combo_left:   int = 0
 
-    # Visual offsets applied by arena (not used in logic)
     lunge_dx: float = 0.0
     lunge_dd: float = 0.0
 
-    # Knockback
-    kbv_x: float = 0.0   # knockback velocity x
-    kbv_d: float = 0.0   # knockback velocity depth
+    kbv_x: float = 0.0
+    kbv_d: float = 0.0
 
-    anim_t: float = 0.0  # per-unit animation clock
+    anim_t: float = 0.0
 
-    exp_reward:  int      = 0
-    gold_reward: int      = 0
+    exp_reward:  int       = 0
+    gold_reward: int       = 0
     loot_reward: list[str] = field(default_factory=list)
 
     @property
@@ -123,40 +126,51 @@ class ActionEngine:
         self.cleared   = False
         self.game_over = False
 
-        self._queued_atk: str | None = None   # AT_LIGHT / AT_HEAVY / AT_JUMP
-        self.combo_count = 0
-        self.combo_timer = 0.0
-        self.screen_shake = 0.0  # consumed by arena for camera shake
+        # ── Combo input system ────────────────────────────────────────────────
+        self._chain:       list[str] = []   # buttons pressed in current chain
+        self._chain_timer: float     = 0.0  # time until chain resets
+        self._next_btn:    str | None = None  # buffered during recovery
 
-        self.damage_log: list[tuple[str, int, bool, str]] = []
+        # ── Combo feedback ────────────────────────────────────────────────────
+        self.combo_count     = 0
+        self.combo_timer     = 0.0
+        self.last_combo_name = ""
+        self.last_combo_tier = 0   # 1-4, drives HUD color
+        self.combo_name_timer = 0.0
+
+        self.screen_shake = 0.0
+
         # (target_id, amount, is_heal, fx_type)
+        self.damage_log: list[tuple[str, int, bool, str]] = []
+        # VFX events for arena
+        self.vfx_queue:  list[dict] = []
 
-        self.vfx_queue: list[dict] = []
-        # [{type, src_id, tgt_id, x, depth}]
+    # ── Public input interface ────────────────────────────────────────────────
 
-    # ── Public ────────────────────────────────────────────────────────────────
+    def queue_input(self, btn: str) -> None:
+        """Called by main.py when J/K/U/I is pressed."""
+        p = self.player
+        if p.state in ("hurt", "dead") or self.cleared or self.game_over:
+            return
 
-    def queue_light_attack(self) -> None:
-        if self._queued_atk is None:
-            self._queued_atk = AT_LIGHT
-
-    def queue_heavy_attack(self) -> None:
-        if self._queued_atk is None:
-            self._queued_atk = AT_HEAVY
-
-    def queue_jump_attack(self) -> None:
-        if self._queued_atk is None:
-            self._queued_atk = AT_JUMP
+        if p.state == "attack":
+            # buffer exactly one next input during recovery
+            self._next_btn = btn
+        else:
+            self._push_chain(btn)
+            self._try_execute()
 
     def alive_enemies(self) -> list[ActionUnit]:
         return [e for e in self.enemies if e.alive]
+
+    # ── Main update ───────────────────────────────────────────────────────────
 
     def update(self, dt: float, keys: dict) -> None:
         if self.cleared or self.game_over:
             return
         self._tick_anim(dt)
         self._move_player(dt, keys)
-        self._player_attack(dt)
+        self._tick_chain(dt)
         for enemy in self.enemies:
             if enemy.alive:
                 self._enemy_update(enemy, dt)
@@ -166,8 +180,109 @@ class ActionEngine:
             self.combo_timer -= dt
             if self.combo_timer <= 0:
                 self.combo_count = 0
+        if self.combo_name_timer > 0:
+            self.combo_name_timer -= dt
         if self.screen_shake > 0:
             self.screen_shake = max(0.0, self.screen_shake - dt * 3.0)
+
+    # ── Combo chain management ────────────────────────────────────────────────
+
+    def _push_chain(self, btn: str) -> None:
+        """Add btn to chain, keep max last 4."""
+        self._chain.append(btn)
+        if len(self._chain) > 4:
+            self._chain = self._chain[-4:]
+        self._chain_timer = CHAIN_WINDOW
+
+    def _tick_chain(self, dt: float) -> None:
+        p = self.player
+
+        # Window countdown — chain resets on timeout
+        if self._chain_timer > 0:
+            self._chain_timer -= dt
+            if self._chain_timer <= 0:
+                self._chain.clear()
+
+        # When recovery ends, pick up buffered next input
+        if p.state == "attack" and p.attack_timer > 0:
+            p.attack_timer -= dt
+            if p.attack_timer <= 0:
+                p.state = "idle"
+                if self._next_btn is not None:
+                    btn = self._next_btn
+                    self._next_btn = None
+                    self._push_chain(btn)
+                    self._try_execute()
+        elif p.state == "attack":
+            p.state = "idle"
+
+    def _try_execute(self) -> None:
+        """Find best combo for current chain and execute if possible."""
+        p = self.player
+        if p.state in ("attack", "hurt", "dead"):
+            return
+        combo = best_match(self._chain)
+        if combo:
+            self._do_combo(combo)
+        # If no match (shouldn't happen since single buttons always match), do nothing
+
+    # ── Combo execution ───────────────────────────────────────────────────────
+
+    def _do_combo(self, combo: ComboMove) -> None:
+        p = self.player
+        p.state        = "attack"
+        p.attack_timer = combo.cd
+
+        # Lunge — bigger for longer combos
+        lunge = 0.7 + combo.tier * 0.25
+        p.lunge_dx = p.facing * lunge
+
+        # Base damage from the last button in combo
+        last_btn     = combo.inputs[-1]
+        hit_range    = BASE_RANGE[last_btn] * combo.range_mult
+        hit_depth    = 0.95
+
+        # Update combo feedback
+        self.last_combo_name  = combo.name
+        self.last_combo_tier  = combo.tier
+        self.combo_name_timer = 1.8
+
+        # VFX
+        self.vfx_queue.append({
+            "type": combo.fx, "src_id": p.unit_id,
+            "x": p.x + p.facing * hit_range * 0.6, "depth": p.depth,
+            "tier": combo.tier,
+        })
+
+        if combo.tier >= 3 or combo.fx in ("heavy", "jump_slam"):
+            self.screen_shake = max(self.screen_shake, 0.10 + combo.tier * 0.06)
+
+        hit_any = False
+        for enemy in self.alive_enemies():
+            if abs(enemy.x - p.x) < hit_range and abs(enemy.depth - p.depth) < hit_depth:
+                dmg    = int(p.atk * combo.dmg) + random.randint(0, max(1, combo.tier * 2))
+                kbx    = p.facing * (2.5 + combo.tier * 1.2)
+                kbd    = random.choice([-0.8, 0.8]) * combo.tier * 0.4
+                actual = enemy.take_damage(dmg, kbx=kbx, kbd=kbd)
+                if actual > 0:
+                    self.damage_log.append((enemy.unit_id, actual, False, combo.fx))
+                    self.combo_count += 1
+                    self.combo_timer  = 2.5
+                    hit_any = True
+
+                    if combo.launch and enemy.alive:
+                        enemy.vy    = 13.0
+                        enemy.y    += 0.3
+                        enemy.state = "hurt"
+                        enemy.hurt_timer = 0.80
+                        self.vfx_queue.append({
+                            "type": "launch", "src_id": p.unit_id, "tgt_id": enemy.unit_id,
+                            "x": enemy.x, "depth": enemy.depth,
+                        })
+
+                    if combo.knockdown and enemy.alive:
+                        enemy.kbv_x = p.facing * 6.0
+                        enemy.kbv_d = random.choice([-1.5, 1.5])
 
     # ── Animation clock ───────────────────────────────────────────────────────
 
@@ -176,17 +291,15 @@ class ActionEngine:
         for e in self.enemies:
             e.anim_t += dt
 
-    # ── Knockback decay ───────────────────────────────────────────────────────
+    # ── Physics helpers ───────────────────────────────────────────────────────
 
     def _apply_knockback(self, u: ActionUnit, dt: float) -> None:
-        if u.kbv_x != 0 or u.kbv_d != 0:
+        if u.kbv_x or u.kbv_d:
             u.x     = max(-PLAY_W, min(PLAY_W, u.x     + u.kbv_x * dt))
-            u.depth = max(0.0,     min(PLAY_D, u.depth  + u.kbv_d * dt))
-            decay = max(0.0, 1.0 - dt * 6.0)
+            u.depth = max(0.0,     min(PLAY_D,  u.depth + u.kbv_d * dt))
+            decay   = max(0.0, 1.0 - dt * 6.0)
             u.kbv_x *= decay
             u.kbv_d *= decay
-
-    # ── Lunge decay ───────────────────────────────────────────────────────────
 
     def _decay_lunge(self, u: ActionUnit, dt: float) -> None:
         decay = max(0.0, 1.0 - dt * 9.0)
@@ -200,8 +313,7 @@ class ActionEngine:
         p.vy += GRAVITY * dt
         p.y   = max(GROUND, p.y + p.vy * dt)
         if p.y <= GROUND:
-            p.y  = GROUND
-            p.vy = 0.0
+            p.y = GROUND; p.vy = 0.0
 
         self._apply_knockback(p, dt)
         self._decay_lunge(p, dt)
@@ -211,7 +323,7 @@ class ActionEngine:
             if p.hurt_timer <= 0:
                 p.state = "idle"
             return
-        if p.state == "dead":
+        if p.state in ("dead", "attack"):
             return
 
         dx     = (1.0 if keys.get("d") or keys.get("arrow_right") else 0.0) \
@@ -219,117 +331,32 @@ class ActionEngine:
         ddepth = (1.0 if keys.get("w") or keys.get("arrow_up")    else 0.0) \
                 - (1.0 if keys.get("s") or keys.get("arrow_down")  else 0.0)
 
-        if dx != 0:
+        if dx:
             p.facing = int(dx)
-        if dx != 0 and ddepth != 0:
-            dx     *= 0.707
-            ddepth *= 0.707
+        if dx and ddepth:
+            dx *= 0.707; ddepth *= 0.707
 
         p.x     = max(-PLAY_W, min(PLAY_W, p.x     + dx     * p.speed * dt))
-        p.depth = max(0.0,     min(PLAY_D, p.depth  + ddepth * p.speed * 0.55 * dt))
+        p.depth = max(0.0,     min(PLAY_D,  p.depth + ddepth * p.speed * 0.55 * dt))
 
         if p.y <= GROUND and keys.get("space_pressed"):
             p.vy = 10.5
             keys["space_pressed"] = False
 
-        if p.state == "attack":
-            p.attack_timer -= dt
-            if p.attack_timer <= 0:
-                p.state = "idle"
-        elif dx != 0 or ddepth != 0:
-            p.state = "walk"
-        else:
-            p.state = "idle"
-
-    # ── Player attack ─────────────────────────────────────────────────────────
-
-    def _player_attack(self, dt: float) -> None:
-        p = self.player
-        if p.attack_timer > 0:
-            p.attack_timer -= dt
-
-        if self._queued_atk is None or p.attack_timer > 0:
-            return
-        if p.state in ("hurt", "dead"):
-            self._queued_atk = None
-            return
-
-        atk_type = self._queued_atk
-        self._queued_atk = None
-
-        # Auto-upgrade to jump slam if airborne
-        if p.y > 0.5 and atk_type == AT_LIGHT:
-            atk_type = AT_JUMP
-
-        if atk_type == AT_LIGHT:
-            self._do_player_light(p)
-        elif atk_type == AT_HEAVY:
-            self._do_player_heavy(p)
-        elif atk_type == AT_JUMP:
-            self._do_player_jump_slam(p)
-
-    def _do_player_light(self, p: ActionUnit) -> None:
-        p.state        = "attack"
-        p.attack_timer = 0.42
-        p.lunge_dx     = p.facing * 0.9
-
-        self.vfx_queue.append({"type": "slash_arc", "src_id": p.unit_id,
-                                "x": p.x + p.facing * 0.8, "depth": p.depth})
-
-        for enemy in self.alive_enemies():
-            if abs(enemy.x - p.x) < 1.6 and abs(enemy.depth - p.depth) < 0.95:
-                dmg    = p.atk + random.randint(-2, 5)
-                kbx    = p.facing * 2.5
-                actual = enemy.take_damage(dmg, kbx=kbx)
-                if actual > 0:
-                    self.damage_log.append((enemy.unit_id, actual, False, "light"))
-                    self.combo_count += 1
-                    self.combo_timer  = 2.5
-
-    def _do_player_heavy(self, p: ActionUnit) -> None:
-        p.state        = "attack"
-        p.attack_timer = 0.75
-        p.lunge_dx     = p.facing * 1.5
-
-        self.vfx_queue.append({"type": "heavy_slam", "src_id": p.unit_id,
-                                "x": p.x + p.facing * 1.2, "depth": p.depth})
-        self.screen_shake = max(self.screen_shake, 0.25)
-
-        for enemy in self.alive_enemies():
-            if abs(enemy.x - p.x) < 2.5 and abs(enemy.depth - p.depth) < 1.2:
-                dmg    = int(p.atk * 2.2) + random.randint(0, 8)
-                kbx    = p.facing * 4.5
-                actual = enemy.take_damage(dmg, kbx=kbx)
-                if actual > 0:
-                    self.damage_log.append((enemy.unit_id, actual, False, "heavy"))
-                    self.combo_count += 1
-                    self.combo_timer  = 2.5
-
-    def _do_player_jump_slam(self, p: ActionUnit) -> None:
-        p.state        = "attack"
-        p.attack_timer = 0.55
-        p.vy           = -6.0   # force down fast
-
-        self.vfx_queue.append({"type": "jump_slam", "src_id": p.unit_id,
-                                "x": p.x, "depth": p.depth})
-        self.screen_shake = max(self.screen_shake, 0.20)
-
-        for enemy in self.alive_enemies():
-            if abs(enemy.x - p.x) < 2.0 and abs(enemy.depth - p.depth) < 1.3:
-                dmg    = int(p.atk * 1.8) + random.randint(-2, 6)
-                kbx    = (enemy.x - p.x) * 2.0   # radial knockback
-                kbd    = (enemy.depth - p.depth) * 1.5
-                actual = enemy.take_damage(dmg, kbx=kbx, kbd=kbd)
-                if actual > 0:
-                    self.damage_log.append((enemy.unit_id, actual, False, "jump_slam"))
-                    self.combo_count += 1
-                    self.combo_timer  = 2.5
+        p.state = "walk" if (dx or ddepth) else "idle"
 
     # ── Enemy update dispatcher ───────────────────────────────────────────────
 
     def _enemy_update(self, e: ActionUnit, dt: float) -> None:
         self._decay_lunge(e, dt)
         self._apply_knockback(e, dt)
+
+        # Apply gravity (enemies can be launched)
+        if e.y > GROUND or e.vy != 0:
+            e.vy += GRAVITY * dt
+            e.y   = max(GROUND, e.y + e.vy * dt)
+            if e.y <= GROUND:
+                e.y = GROUND; e.vy = 0.0
 
         if e.hurt_timer > 0:
             e.hurt_timer -= dt
@@ -351,141 +378,107 @@ class ActionEngine:
         else:
             self._enemy_basic(e, dt)
 
-    # ── Enemy movement helper ─────────────────────────────────────────────────
+    # ── Movement helpers ──────────────────────────────────────────────────────
 
-    def _chase(self, e: ActionUnit, dt: float, stop_dist: float = 0.15) -> None:
+    def _chase(self, e: ActionUnit, dt: float, stop: float = 0.15) -> None:
         p  = self.player
-        dx = p.x     - e.x
-        dd = p.depth - e.depth
-        dist = (dx * dx + dd * dd) ** 0.5
-        if dist > stop_dist:
+        dx = p.x - e.x; dd = p.depth - e.depth
+        dist = (dx*dx + dd*dd)**0.5
+        if dist > stop:
             e.state = "walk"
-            e.x     += (dx / dist) * e.speed * dt
-            e.depth += (dd / dist) * e.speed * 0.55 * dt
+            e.x     += (dx/dist) * e.speed * dt
+            e.depth += (dd/dist) * e.speed * 0.55 * dt
             e.facing = 1 if dx > 0 else -1
         else:
             e.state = "idle"
 
     def _in_melee(self, e: ActionUnit, rx: float | None = None, rd: float | None = None) -> bool:
-        p   = self.player
-        rx  = rx or e.attack_range
-        rd  = rd or e.attack_depth
-        return abs(e.x - p.x) < rx and abs(e.depth - p.depth) < rd
+        p = self.player
+        return (abs(e.x - p.x) < (rx or e.attack_range)
+                and abs(e.depth - p.depth) < (rd or e.attack_depth))
 
-    def _deal_to_player(self, e: ActionUnit, mult: float = 1.0,
-                        kbx: float = 0.0, kbd: float = 0.0) -> None:
+    def _deal(self, e: ActionUnit, mult: float = 1.0,
+              kbx: float = 0.0, kbd: float = 0.0, fx: str = "enemy_slash") -> None:
         if self.player.state == "dead":
             return
         dmg    = int(e.atk * mult) + random.randint(-1, 3)
         actual = self.player.take_damage(dmg, kbx=kbx, kbd=kbd)
         if actual > 0:
-            self.damage_log.append((self.player.unit_id, actual, False, e.attack_style))
+            self.damage_log.append((self.player.unit_id, actual, False, fx))
         if self.player.hp <= 0:
             self.game_over = True
 
-    # ── Attack styles ─────────────────────────────────────────────────────────
+    # ── Enemy attack styles ───────────────────────────────────────────────────
 
     def _enemy_basic(self, e: ActionUnit, dt: float) -> None:
         if self._in_melee(e) and e.attack_timer <= 0:
-            e.state        = "attack"
-            e.attack_timer = e.attack_cd
-            e.lunge_dx     = (self.player.x - e.x) * 0.4
-            self.vfx_queue.append({"type": "enemy_slash", "src_id": e.unit_id,
-                                   "x": e.x, "depth": e.depth})
-            self._deal_to_player(e, kbx=-e.facing * 2.0)
+            e.state = "attack"; e.attack_timer = e.attack_cd
+            e.lunge_dx = (self.player.x - e.x) * 0.4
+            self.vfx_queue.append({"type":"enemy_slash","src_id":e.unit_id,"x":e.x,"depth":e.depth})
+            self._deal(e, kbx=-e.facing*2.0)
         else:
             self._chase(e, dt)
 
     def _enemy_slam(self, e: ActionUnit, dt: float) -> None:
-        """Slow, telegraphed wide slam: wide range, high damage, screen shake."""
-        if self._in_melee(e, rx=e.attack_range * 1.5, rd=e.attack_depth * 1.3) \
-                and e.attack_timer <= 0:
-            e.state        = "attack"
-            e.attack_timer = e.attack_cd
-            e.lunge_dx     = (self.player.x - e.x) * 0.6
-            self.vfx_queue.append({"type": "slam_wave", "src_id": e.unit_id,
-                                   "x": e.x, "depth": e.depth})
+        if self._in_melee(e, e.attack_range*1.5, e.attack_depth*1.3) and e.attack_timer <= 0:
+            e.state = "attack"; e.attack_timer = e.attack_cd
+            e.lunge_dx = (self.player.x - e.x) * 0.6
+            self.vfx_queue.append({"type":"slam_wave","src_id":e.unit_id,"x":e.x,"depth":e.depth})
             self.screen_shake = max(self.screen_shake, 0.18)
-            self._deal_to_player(e, mult=1.6, kbx=-e.facing * 5.0, kbd=random.choice([-1.5, 1.5]))
+            self._deal(e, 1.6, kbx=-e.facing*5.0, kbd=random.choice([-1.5,1.5]), fx="slam_wave")
         else:
             self._chase(e, dt)
 
     def _enemy_combo(self, e: ActionUnit, dt: float) -> None:
-        """Two quick hits; second is queued via combo_left."""
         if e.combo_left > 0 and e.attack_timer <= 0:
-            e.combo_left  -= 1
-            e.attack_timer = 0.25
-            e.lunge_dx     = (self.player.x - e.x) * 0.35
-            self.vfx_queue.append({"type": "enemy_slash", "src_id": e.unit_id,
-                                   "x": e.x, "depth": e.depth})
+            e.combo_left -= 1; e.attack_timer = 0.25
+            e.lunge_dx = (self.player.x - e.x) * 0.35
+            self.vfx_queue.append({"type":"enemy_slash","src_id":e.unit_id,"x":e.x,"depth":e.depth})
             if self._in_melee(e):
-                self._deal_to_player(e, mult=0.75, kbx=-e.facing * 1.5)
+                self._deal(e, 0.75, kbx=-e.facing*1.5)
             return
-
         if self._in_melee(e) and e.attack_timer <= 0:
-            e.state        = "attack"
-            e.attack_timer = e.attack_cd
-            e.combo_left   = 1      # triggers second hit
-            e.lunge_dx     = (self.player.x - e.x) * 0.35
-            self.vfx_queue.append({"type": "enemy_slash", "src_id": e.unit_id,
-                                   "x": e.x, "depth": e.depth})
+            e.state = "attack"; e.attack_timer = e.attack_cd
+            e.combo_left = 1
+            e.lunge_dx = (self.player.x - e.x) * 0.35
+            self.vfx_queue.append({"type":"enemy_slash","src_id":e.unit_id,"x":e.x,"depth":e.depth})
             if self._in_melee(e):
-                self._deal_to_player(e, mult=0.75, kbx=-e.facing * 1.5)
+                self._deal(e, 0.75, kbx=-e.facing*1.5)
         else:
             self._chase(e, dt)
 
     def _enemy_ranged(self, e: ActionUnit, dt: float) -> None:
-        """Fires a bolt from range; no need to be in melee."""
-        p      = self.player
+        p = self.player
         dist_x = abs(e.x - p.x)
-        dist_d = abs(e.depth - p.depth)
-        in_sight = dist_x < 7.0 and dist_d < 1.5
-
-        # Keep preferred distance — retreat if too close
         if dist_x < 2.0:
-            e.state = "walk"
-            e.x     += -e.facing * e.speed * dt
-        elif in_sight and e.attack_timer <= 0:
-            e.state        = "attack"
-            e.attack_timer = e.attack_cd
-            e.facing       = 1 if (p.x - e.x) > 0 else -1
-            self.vfx_queue.append({"type": "ranged_bolt",
-                                   "src_id": e.unit_id, "tgt_id": p.unit_id,
-                                   "sx": e.x, "sd": e.depth,
-                                   "tx": p.x, "td": p.depth})
-            self._deal_to_player(e, mult=1.1)
+            e.state = "walk"; e.x += -e.facing * e.speed * dt
+        elif abs(e.depth - p.depth) < 1.5 and e.attack_timer <= 0:
+            e.state = "attack"; e.attack_timer = e.attack_cd
+            e.facing = 1 if (p.x - e.x) > 0 else -1
+            self.vfx_queue.append({"type":"ranged_bolt","src_id":e.unit_id,"tgt_id":p.unit_id,
+                                   "sx":e.x,"sd":e.depth,"tx":p.x,"td":p.depth})
+            self._deal(e, 1.1, fx="ranged_bolt")
         else:
-            self._chase(e, dt, stop_dist=2.0)
+            self._chase(e, dt, stop=2.0)
 
     def _enemy_dive(self, e: ActionUnit, dt: float) -> None:
-        """Bat-style: flies up then dives down on player."""
         p = self.player
-
         if e.state == "dive_rise":
-            e.y  += 4.5 * dt
-            e.vy  = 0.0
+            e.y += 4.5*dt
             if e.y >= 2.5:
-                # align x with player before diving
-                e.x    = p.x
-                e.depth = p.depth
+                e.x = p.x; e.depth = p.depth
                 e.state = "dive_fall"
             return
-
         if e.state == "dive_fall":
-            e.y -= 9.0 * dt
+            e.y -= 9.0*dt
             if e.y <= GROUND:
-                e.y            = GROUND
-                e.state        = "attack"
+                e.y = GROUND; e.state = "attack"
                 e.attack_timer = e.attack_cd
-                self.vfx_queue.append({"type": "slam_wave", "src_id": e.unit_id,
-                                       "x": e.x, "depth": e.depth})
+                self.vfx_queue.append({"type":"slam_wave","src_id":e.unit_id,"x":e.x,"depth":e.depth})
                 self.screen_shake = max(self.screen_shake, 0.10)
-                self._deal_to_player(e, mult=1.4, kbx=-e.facing * 3.0)
+                self._deal(e, 1.4, kbx=-e.facing*3.0, fx="slam_wave")
             return
-
-        # Ground phase — same as basic but initiates dive
         if self._in_melee(e) and e.attack_timer <= 0:
-            e.state = "dive_rise"
-            e.attack_timer = e.attack_cd + 0.8   # full CD for next dive
+            e.state = "dive_rise"; e.attack_timer = e.attack_cd + 0.8
         else:
             self._chase(e, dt)

@@ -8,9 +8,11 @@ Run:
 Controls (battle):
   WASD / Arrow Keys — Move (W/S = depth axis)
   Space             — Jump
-  J / F             — Light attack  (fast, 1× dmg)
-  K                 — Heavy attack  (slow, 2.2× dmg, shockwave)
-  J while airborne  — Jump slam     (AoE on landing, 1.8× dmg)
+  J / F             — LP  Left  Punch  (fast)
+  K                 — RP  Right Punch  (medium)
+  U                 — LK  Left  Kick   (medium)
+  I                 — RK  Right Kick   (slow, wide)
+  Combos: chain buttons within 0.42 s  e.g. J→J→K→I = HELL SWEEP
   R                 — Restart run
   M                 — Menu
 """
@@ -28,6 +30,7 @@ from direct.task import Task
 from battle.action_engine import (
     ActionEngine, ES_BASIC, ES_SLAM, ES_COMBO, ES_RANGED, ES_DIVE,
 )
+from battle.combo_catalog import LP, RP, LK, RK
 from core import PlayerProfile, RunState, load_profile, save_profile
 from render.arena import ArenaScene
 from ui.hud import ActionHud
@@ -170,11 +173,12 @@ class BeatEmUpApp(ShowBase):
         self.accept("space",    self._on_jump)
         self.accept("space-up", self._noop)
 
-        # Light attack
-        self.accept("j", self._on_light_attack)
-        self.accept("f", self._on_light_attack)
-        # Heavy attack
-        self.accept("k", self._on_heavy_attack)
+        # 4 attack buttons (Tekken-style)
+        self.accept("j", self._on_btn, [LP])   # Left  Punch
+        self.accept("f", self._on_btn, [LP])   # Left  Punch (alt)
+        self.accept("k", self._on_btn, [RP])   # Right Punch
+        self.accept("u", self._on_btn, [LK])   # Left  Kick
+        self.accept("i", self._on_btn, [RK])   # Right Kick
 
         # Meta
         self.accept("n", self._on_n)
@@ -200,17 +204,9 @@ class BeatEmUpApp(ShowBase):
         if self.scene == AppScene.BATTLE:
             self._keys["space_pressed"] = True
 
-    def _on_light_attack(self) -> None:
+    def _on_btn(self, btn: str) -> None:
         if self.scene == AppScene.BATTLE:
-            # Auto-upgrade to jump slam when airborne
-            if self.engine.player.y > 0.5:
-                self.engine.queue_jump_attack()
-            else:
-                self.engine.queue_light_attack()
-
-    def _on_heavy_attack(self) -> None:
-        if self.scene == AppScene.BATTLE:
-            self.engine.queue_heavy_attack()
+            self.engine.queue_input(btn)
 
     def _on_n(self) -> None:
         if self.scene in (AppScene.REWARD, AppScene.BREW):

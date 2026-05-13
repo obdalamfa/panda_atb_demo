@@ -330,11 +330,12 @@ class ArenaScene:
     def process_vfx_queue(self) -> None:
         for ev in self.engine.vfx_queue:
             t = ev.get("type", "")
-            if t == "slash_arc":
+            # Combo catalog fx names map to arena VFX
+            if t in ("slash_arc", "slash", "light"):
                 self._vfx_slash_arc(ev)
-            elif t == "heavy_slam":
+            elif t in ("heavy_slam", "heavy"):
                 self._vfx_heavy_slam(ev)
-            elif t == "jump_slam":
+            elif t in ("jump_slam",):
                 self._vfx_jump_slam(ev)
             elif t == "enemy_slash":
                 self._vfx_enemy_slash(ev)
@@ -342,6 +343,8 @@ class ArenaScene:
                 self._vfx_slam_wave(ev)
             elif t == "ranged_bolt":
                 self._vfx_ranged_bolt(ev)
+            elif t == "launch":
+                self._vfx_launch(ev)
         self.engine.vfx_queue.clear()
 
     def _world_pos(self, x: float, depth: float, z: float = 0.0) -> Point3:
@@ -441,6 +444,28 @@ class ArenaScene:
             LerpPosInterval(bolt, 0.22, dst),
             Func(lambda n=bolt: self._cleanup_vfx(n)),
             Func(lambda p=dst: self._ranged_impact(p)),
+        ).start()
+
+    def _vfx_launch(self, ev: dict) -> None:
+        """Star-burst of sparks for a launch combo — enemy sent airborne."""
+        tgt_node = self._char_nodes.get(ev.get("tgt_id", ""))
+        pos = tgt_node.getPos() if (tgt_node and not tgt_node.isEmpty()) \
+              else self._world_pos(ev["x"], ev["depth"], 0.5)
+        # Bright white orb burst upward
+        orb = self._make_orb(LColor(1.0, 0.95, 0.4, 1.0), radius=0.55)
+        orb.setPos(pos)
+        ring = self._make_ring(LColor(0.95, 0.85, 0.20, 0.80), 0.4)
+        ring.setPos(pos)
+        end = pos + Vec3(0, 0, 3.5)
+        Sequence(
+            Parallel(
+                LerpPosInterval(orb, 0.30, end),
+                LerpScaleInterval(orb, 0.30, (2.5, 2.5, 2.5)),
+                LerpColorScaleInterval(orb, 0.30, LColor(1, 1, 1, 0)),
+                LerpScaleInterval(ring, 0.18, (3.8, 3.8, 3.8)),
+                LerpColorScaleInterval(ring, 0.18, LColor(1, 1, 1, 0)),
+            ),
+            Func(lambda a=orb, b=ring: [self._cleanup_vfx(a), self._cleanup_vfx(b)]),
         ).start()
 
     def _ranged_impact(self, pos: Point3) -> None:
